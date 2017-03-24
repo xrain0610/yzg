@@ -1,0 +1,1175 @@
+package com.sunweb.game.rpg.playerUI.artifact
+{
+	import SUI.PointMC;
+	
+	import com.sunweb.game.res.ResourceDisplay;
+	import com.sunweb.game.res.ResourceUtil;
+	import com.sunweb.game.rpg.GameContext;
+	import com.sunweb.game.rpg.TextEffect;
+	import com.sunweb.game.rpg.TimeBaseManager;
+	import com.sunweb.game.rpg.artifact.ArtifactManager;
+	import com.sunweb.game.rpg.artifact.EquipEnhanceManager;
+	import com.sunweb.game.rpg.bitmapScene.BitmapSceneManager;
+	import com.sunweb.game.rpg.diversity.DiversityManager;
+	import com.sunweb.game.rpg.equ.EquipmentKind;
+	import com.sunweb.game.rpg.equ.EquipmentManager;
+	import com.sunweb.game.rpg.gameItem.GameItemFullInfo;
+	import com.sunweb.game.rpg.gameItem.GameItemInfoManager;
+	import com.sunweb.game.rpg.gameItem.GameItemManager;
+	import com.sunweb.game.rpg.gameItem.GameItemRank;
+	import com.sunweb.game.rpg.gameItem.GameItemSubtype;
+	import com.sunweb.game.rpg.gameItem.GameItemType;
+	import com.sunweb.game.rpg.iconItem.IIconItemUI;
+	import com.sunweb.game.rpg.iconItem.IconItem;
+	import com.sunweb.game.rpg.iconItem.IconItemBag;
+	import com.sunweb.game.rpg.iconItem.IconItemEquip;
+	import com.sunweb.game.rpg.iconItem.IconItemManager;
+	import com.sunweb.game.rpg.msgPrompt.MsgPromptEnum;
+	import com.sunweb.game.rpg.msgPrompt.MsgPromptManager;
+	import com.sunweb.game.rpg.netRole.AIPlayer;
+	import com.sunweb.game.rpg.playerBag.GoldManager;
+	import com.sunweb.game.rpg.playerUI.GameTipManager;
+	import com.sunweb.game.rpg.playerUI.GameTipUI;
+	import com.sunweb.game.rpg.playerUI.INovicePromptUI;
+	import com.sunweb.game.rpg.playerUI.PlayerMenuUI;
+	import com.sunweb.game.rpg.playerUI.managers.GameLinkManager;
+	import com.sunweb.game.rpg.playerUI.managers.NovicePromptManager;
+	import com.sunweb.game.rpg.playerUI.managers.PlayerUIManager;
+	import com.sunweb.game.rpg.script.ConditionScript;
+	import com.sunweb.game.rpg.settingConfig.RoleAttributesModifierEnum;
+	import com.sunweb.game.rpg.world.ui.MenuManager;
+	import com.sunweb.game.ui.WindowManager;
+	import com.sunweb.game.util.TimeLimiter;
+	import com.sunweb.game.utils.JSONUtil;
+	import com.sunweb.game.utils.StringUtil;
+	import com.sunweb.game.utils.UIUtil;
+	
+	import fl.data.DataProvider;
+	
+	import flash.display.Bitmap;
+	import flash.display.BitmapData;
+	import flash.display.DisplayObject;
+	import flash.display.DisplayObjectContainer;
+	import flash.display.MovieClip;
+	import flash.display.Sprite;
+	import flash.events.Event;
+	import flash.events.MouseEvent;
+	import flash.geom.Point;
+	import flash.geom.Rectangle;
+	import flash.text.TextField;
+	import flash.utils.setTimeout;
+	
+	import playerUI.EmbedBoxNewUIMC;
+	import playerUI.IconItemBagTips;
+
+	/**
+	 * 镶嵌，拆除
+	 * @author LiuYu
+	 */
+	public class EmbedBoxUI extends EmbedBoxNewUIMC implements IIconItemUI, INovicePromptUI
+	{
+		private const HOLE:String = "hole";
+		private const DISEMBED:String = "disembed";
+		
+		//以装备Kind为Key的装备操作框Hash表
+		private var maxGemCount:int = 6;	//最大孔数
+//		private var _equipBagArr:Array;  //装备数组
+		private var _gemBags:Array;		//宝石框数组
+		private var _stoneBags:Array;    //玩家有的宝石数组
+		public var _equipBag:IconItemBag;	//装备操作框
+//		private var _pointHole_RArr:Array;  //在显示区展示镶嵌的宝石和孔
+//		private var _infoArr:Array; //属性显示数组
+		
+		public var equipInfo:GameItemFullInfo;	//当前装备的信息
+		private var action:String;			//当前选择的操作
+		
+		//玩家所有宝石信息
+		private var currentTypeGoods:Array;
+//		private var currentType:String; //当前选择的宝石类型
+		//当前宝石列表页数
+		private var currentPage:int;
+		private var pageSize:int = 12;
+		private var maxPage:int;
+		private var explainStr:String;
+		private var npcBitmap:Bitmap;
+		
+		private var costObject:Object;
+		private var _equipBagCode:String;
+		
+		private var stonBagWidth:int = 5;
+		private var stonBagHeight:int = 2;
+		private var stonWidth:int = 10;
+		private var stonHeight:int = 10;
+		
+		private var _isSelDef:Boolean;//默认自动选择装备
+		
+		public function EmbedBoxUI() {
+			super();
+			this.visible=false;
+			initDiversity();
+			npcBitmap = new Bitmap(new BitmapData(430, 470, true, 0));
+			pointPlayer.addChild(npcBitmap);
+			//生成操作框
+			_equipBag = new IconItemBag(bagEquip, this, 0);
+			_equipBag.addValidType(GameItemType.EQUIPMENT);
+			_equipBag.lockDrag = true;
+			iconScroll = UIUtil.setScrollBarWidth(iconScroll, 18);
+//			_equipBagArr = new Array();
+			
+			//宝石孔
+			_gemBags = new Array();
+			for (var k:int=0; k<maxGemCount; k++) {
+				var icon:MovieClip = this["bag" + k];
+				if (!icon) { continue; }
+				var thisBag:IconItemBag = new IconItemBag(icon, this, k);
+				thisBag.addValidType(GameItemType.COLLECTION);
+				thisBag.lockDrag = true;
+				thisBag.addEventListener(MouseEvent.MOUSE_OVER, onBagOver);
+				thisBag.addEventListener(MouseEvent.MOUSE_OUT, onBagOut);
+				_gemBags.push(thisBag);
+			}
+			
+			//玩家持有宝石数组
+			_stoneBags = new Array();
+			
+			
+//			equipScore.selectable = false;
+//			txtPage.selectable = false;
+//			txtExplain.selectable = false;
+//			
+//			this.setChildIndex(pointChooseStone, this.numChildren - 1);
+			
+			explainStr = DiversityManager.getString("SmithUI", "explainEmbedBox");
+			addListener();
+			clearMaterial();
+		}
+		private function refreshList(gemArr:Array):void {
+			pointIcon.scrollRect = new Rectangle(0, 0, iconScroll.x - pointIcon.x, iconScroll.height);
+			//先清除原来的
+			clearGoods();
+			var heightNum:int = Math.ceil(gemArr.length / stonBagWidth);
+			if(heightNum < stonBagHeight) heightNum = stonBagHeight;
+			var scrollHeight;
+			var thisBag2:IconItemBag;
+				for (var i:int=0; i< heightNum; i++) {
+					for (var j:int=0; j<stonBagWidth; j++) {
+					var icon2:MovieClip = new MovieClip();
+					if (!icon2) { continue; }
+					thisBag2 = new IconItemBag(icon2, this, maxGemCount + j + i * stonBagWidth);
+					thisBag2.addValidType(GameItemType.COLLECTION);
+					thisBag2.isLocked = false;
+					thisBag2.lockDrag = true;
+					thisBag2.x = (thisBag2.width + stonWidth) *j;
+					thisBag2.y = (thisBag2.height + stonHeight) *i;
+					var tempBag:IconItemBag = gemArr[j + i * stonBagWidth];
+					if(!tempBag || !tempBag.haveIconItem) {
+						continue;
+					}
+					thisBag2.itemIndex = tempBag.itemIndex;
+					thisBag2.pushIconItem(tempBag.haveIconItem.clone());
+					pointIcon.addChild(thisBag2);
+					_stoneBags.push(thisBag2);	
+				}				
+			}
+				scrollHeight += thisBag2.height * heightNum + stonHeight * (heightNum - 1);
+				iconScroll.update();
+				if (scrollHeight > iconScroll.height) {
+					iconScroll.visible = true;
+					iconScroll.maxScrollPosition = scrollHeight - iconScroll.height;
+				}else{
+					iconScroll.visible = false;
+				}
+		}
+		private function onBagOver(e:MouseEvent):void
+		{
+			var thisBag:IconItemBag = e.currentTarget as IconItemBag;
+			if(thisBag.isLocked){
+				var tipWidth:int = 180;
+				var tip:GameTipUI = new GameTipUI("thisBag",thisBag);
+				tip.addTipInfo(DiversityManager.getString("SmithUI", "tip_" + thisBag.itemIndex),tipWidth,0);
+				GameTipManager.showTip(tip);
+			}
+		}
+		private function onBagOut(e:MouseEvent):void
+		{
+			var thisBag:IconItemBag = e.currentTarget as IconItemBag;
+			GameTipManager.closeTip("thisBag",true);
+		}
+		//初始多语言
+		public function get uiIndex():int {
+			return -1;
+		}
+        private var equMaxLocation:int = 9;
+		public function initDiversity():void {
+			for(var i = 1; i < equMaxLocation; i++) {
+				var iconBg:PointMC = this["pointIcon" + i];
+				if(iconBg) new ResourceDisplay(iconBg);
+			}
+
+		}
+
+		private var rolePlayer:AIPlayer; 
+		private function creatAIPlayer():void {
+			rolePlayer = new AIPlayer(GameContext.localPlayer.fullInfo.jobCode, GameContext.localPlayer.fullInfo.sex, GameContext.localPlayer.fullInfo.hairStyleIndex);
+			rolePlayer.setEquipmentModels(GameContext.localPlayer.getEquipmentModels());
+			BitmapSceneManager.addBitmapObject(BitmapSceneManager.BITMAP_SMITH_EMBED, rolePlayer, npcBitmap, this, 2.5, 0, 0.5, 0, true, null, true, true);
+		}
+		/**
+		 * 新手提示
+		 */
+		private var _noviceSprite:Sprite;
+		//新手提示容器
+		public function set noviceSprite(sprite:Sprite):void {
+			_noviceSprite = sprite;
+		}
+		public function get noviceSprite():Sprite {
+			return _noviceSprite;
+		}
+		
+		public function getTargetPoint(target:String, isAlways:Boolean=false):Point
+		{
+			var targetDisplay:DisplayObject = getTargetDisplayObject(target, isAlways);
+			if(targetDisplay) {
+				return this.globalToLocal(targetDisplay.localToGlobal(new Point()));
+			}
+			return null;
+		}
+		
+		public function getTargetDisplayObject(target:String, isAlways:Boolean=false):DisplayObject
+		{
+			return NovicePromptManager.getUITargetDisplayObject(this, target, isAlways);
+		}
+
+		private function addListener():void {
+			GameTipManager.addUITips(point_Explain, explainStr, 280);
+//			cmdPrvPage.addEventListener(MouseEvent.CLICK, onClickPage);
+//			cmdNextPage.addEventListener(MouseEvent.CLICK, onClickPage);
+			pointGemEffect.addEventListener(MouseEvent.MOUSE_OVER, onGemTips);
+			pointGemEffect.addEventListener(MouseEvent.MOUSE_OUT,outGemTips );
+		}
+		private function removeListener():void {
+			GameTipManager.removeUITips(point_Explain);
+//			cmdPrvPage.removeEventListener(MouseEvent.CLICK, onClickPage);
+//			cmdNextPage.removeEventListener(MouseEvent.CLICK, onClickPage);
+			pointGemEffect.removeEventListener(MouseEvent.MOUSE_OVER, onGemTips);
+			pointGemEffect.removeEventListener(MouseEvent.MOUSE_OUT,outGemTips );
+		}
+		
+		//添加宝石Tips
+		public function onGemTips(e:Event):void{
+			PlayerUIManager.playerFullInfoUI.onGemTips(null);
+		}
+		
+		public function outGemTips(e:Event):void{
+			PlayerUIManager.playerFullInfoUI.outGemTips(null);
+		}
+		/**
+		 * 点击说明
+		 */
+		private function onClickExplain(e:Event):void {
+			if(StringUtil.isEmpty(explainStr)){
+				return;
+			}
+			WindowManager.showMessageBox(explainStr);
+		}
+		
+		//左右翻页
+		private function onClickPage(e:Event):void {
+			//上一页
+//			if (e.currentTarget == cmdPrvPage) {
+//				if(currentPage > 1){
+//					showGoods(currentTypeGoods, currentPage - 1);
+//				}
+//			} else if (e.currentTarget == cmdNextPage) {
+//				//下一页
+//				if(currentPage < maxPage)
+//				{
+//					showGoods(currentTypeGoods, currentPage + 1);
+//				}
+//			}
+		}
+		
+		//双击一个宝石进行镶嵌
+		private function selectItem(e:Event):void
+		{
+//			if (!_equipBag.haveIconItem) { return; }
+//			for (var i:int=0; i <  point_Gem.numChildren; i++){
+//				var infoUI:EquipInfoUI = point_Gem.getChildAt(i) as EquipInfoUI;
+//				if((e.target as IconItem) && (e.target as IconItem) == infoUI.equipInfo.haveIconItem){
+//					var _iconItem:IconItem = e.target as IconItem;
+//					embedGem(_iconItem.itemCode, infoUI._index);
+//				}
+//			}
+//			
+//			if(e && e.target){
+//				NovicePromptManager.dispatchDoubleClick(e.target as DisplayObject);
+//			}
+//			var _iconItem:IconItem = e.target as IconItem;
+//			if(_iconItem && (_iconItem.parent.parent is EquipInfoUI)){
+//				embedGem(_iconItem.itemCode, (_iconItem.parent.parent as EquipInfoUI)._index);
+//			}
+		}
+
+		//拖动
+		private function onStartDrag(e:Event):void {
+			this.startDrag();
+		}
+		private function onStopDrag(e:Event):void {
+			this.stopDrag();
+		}
+		
+		//关闭
+		private function onClose(e:Event):void {
+			PlayerUIManager.closeUI(this);
+		}
+
+		//
+		private var timeInv:TimeLimiter = new TimeLimiter(100);
+		private function onEnterFrame(e:Event):void {
+			if (timeInv.checkTimeout()) {
+				checkEquipInfo();
+			}
+		}
+		
+		/**
+		 * 初始化宝石分类列表
+		 */
+//		private function initStoneList():void {
+//			ListStone.dataProvider = new DataProvider(null);
+//			var trainListTime:Array = new Array();
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "assembleAll"),data:DiversityManager.getString("SmithUI", "assembleAll")});
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "strengthStone"),data:GemEnum.Gem_STRENGEH+""}); //宝石类型 1
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "wisdomStone"),data:GemEnum.Gem_WISDOM+""}); //宝石类型 2
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "agilityStone"),data:GemEnum.Gem_AGILITY+""}); //宝石类型 3.....依次类推
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "vitalityStone"),data:GemEnum.Gem_VITALITY+""});
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "hpStone"),data:GemEnum.Gem_HP+""});
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "physicalAttackStone"),data:GemEnum.Gem_PHYSICALATT+""});
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "magicAttackStone"),data:GemEnum.Gem_MAGICATT+""});
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "physicalDefenseStone"),data:GemEnum.Gem_PHYSICALDEF+""});
+//			trainListTime.push({label:DiversityManager.getString("SmithUI", "magicDefenseStone"),data:GemEnum.Gem_MAGICDEF+""});
+//			ListStone.dataProvider = new DataProvider(trainListTime);
+//			ListStone.selectedIndex = 0;
+//			currentType = ListStone.selectedItem.data;
+//		}
+		
+		/**
+		 * 得到玩家身上所有宝石
+		 */
+		public function getPlayerGems():void{
+//			initStoneList();
+			currentTypeGoods = new Array();
+			//得到装备配置
+			var _itemConfig:Object = GameItemManager.getItemConfig(_equipBagCode);
+			if (!_itemConfig) { return; }
+			//判断当前所选择的装备是否是时装帽子和时装衣服
+			if(_itemConfig.properties.kind == EquipmentKind.FASHION_CLOTHES || _itemConfig.properties.kind == EquipmentKind.FASHION_HAT){
+				currentTypeGoods = PlayerUIManager.playerBagUI.getItemArray(GameItemSubtype.COLLECTION_BOWLDER);
+			}else{
+				currentTypeGoods = PlayerUIManager.playerBagUI.getItemArray(GameItemSubtype.COLLECTION_GEM);
+			}
+			refreshList(currentTypeGoods);
+		}
+		
+		/**
+		 * 显示玩家所有宝石
+		 */
+		private function showGoods(gemArr:Array, page:int = 1):void
+		{
+			//先清除原来的
+			clearGoods();
+			
+//			if(!gemArr){
+//				cmdPrvPage.enabled = false;
+//				cmdPrvPage.filters = [UIUtil.getGrayFilterNoAlpha()];
+//				cmdNextPage.enabled = false;
+//				cmdNextPage.filters = [UIUtil.getGrayFilterNoAlpha()];
+//				return;
+//			}
+			
+			var goods:Array = gemArr;
+			if(goods.length == 0){
+				return;
+			}
+			//判断页数范围
+			var pageTotle:int=goods.length / pageSize;
+			if (goods.length % pageSize > 0)
+			{
+				pageTotle++;
+			}
+			if (pageTotle < 1)
+			{
+				pageTotle=1;
+			}
+			if (page * pageSize > goods.length)
+			{
+				page = pageTotle;
+			}
+			if (page < 1)
+			{
+				page=1;
+			}
+			
+			currentPage = page;
+			goods=goods.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+//			txtPage.text = currentPage + "/" + pageTotle;
+//			maxPage = pageTotle;
+//			if(currentPage <= 1){
+//				cmdPrvPage.enabled = false;
+//				cmdPrvPage.filters = [UIUtil.getGrayFilterNoAlpha()];
+//			}else{
+//				cmdPrvPage.enabled = true;
+//				cmdPrvPage.filters = [];
+//			}
+//			if(currentPage >= maxPage){
+//				cmdNextPage.enabled = false;
+//				cmdNextPage.filters = [UIUtil.getGrayFilterNoAlpha()];
+//			}else{
+//				cmdNextPage.enabled = true;
+//				cmdNextPage.filters = [];
+//			}
+
+//			itemBags = new Array();
+//			var goodsCount:int = 0;
+			var _maxValue:int = Math.min(goods.length, _stoneBags.length);
+			for (var i:int=0; i < _maxValue; i++){
+				var tempBag:IconItemBag = goods[i];
+				if(!tempBag.haveIconItem) {
+					continue;
+				}
+				var _stoneIcon:IconItemBag = _stoneBags[i];
+				if(_stoneIcon){
+					_stoneIcon.itemIndex = tempBag.itemIndex;
+					_stoneIcon.pushIconItem(tempBag.haveIconItem.clone());
+				}
+			}
+//			for each (var thisBag:IconItemBag in goods)
+//			{
+//				if(!thisBag.haveIconItem) {return;}
+//				//得到商品的Iconitem
+//				var goodsIconItem:IconItem=thisBag.haveIconItem.clone();
+//				//生成商品单位
+//				var newGoods:EquipInfoUI=new EquipInfoUI(goodsIconItem, thisBag.itemIndex);
+////				newGoods.equipInfo.addEventListener(MouseEvent.DOUBLE_CLICK, selectItem);
+//				//添加IconItem到集合
+//				itemBags.push(newGoods.equipInfo);
+//				
+//				//设置位置并添加到容器
+//				newGoods.x=(goodsCount % 2) * 155;
+//				newGoods.y=int(goodsCount / 2) * 65;
+//				point_Gem.addChild(newGoods);
+//				goodsCount++;
+//			}
+		}
+		
+		//清空宝石显示
+		private function clearGoods():void
+		{
+			//清空分类商品
+//			pointChooseStone.visible = false;
+			for each(var _iconBag:IconItemBag in _stoneBags){
+				if(_iconBag && _iconBag.haveIconItem){
+					_iconBag.dropIconItem();
+				}
+			}
+			_iconBag = new Array();
+//			txtPage.text = "";
+		}
+
+		//显示可镶嵌宝石类型
+		private function onShowGemType(e:Event):void {
+//			if (!_equipBag.haveIconItem) { return; }
+//			//得到配置
+//			var itemConfig:Object = GameItemManager.getItemConfig(_equipBag.haveIconItem.itemCode);
+//			if (!itemConfig) { return; }
+//			var embedPlan:Object = ArtifactManager.getEmbedPlan(JSONUtil.getStr(itemConfig, ["properties", "embedPlanId"]));
+//			if (!embedPlan) { return; }
+//			//显示可镶嵌宝石类型
+//			var tipUI:GameTipUI = new GameTipUI("gemType");
+//			var tipWidth:int = 120;
+//			tipUI.addTipInfo("<p align='center'>" + DiversityManager.getString("EmbedBoxUI", "gemType", [JSONUtil.getInt(itemConfig, ["properties", "embedGemLevel"])]) + "</p>", tipWidth, 0);
+//			tipUI.addTipInfo("  ", tipWidth, tipUI.maxRow + 1);
+////			tipUI.addTipInfo("<p align='center'>" + DiversityManager.getString("EmbedBoxUI", "gemLevel", [JSONUtil.getInt(itemConfig, ["properties", "embedGemLevel"])]) + "</p>", tipWidth, tipUI.maxRow + 1);
+//			for each(var typeId:int in embedPlan.embedGemType) {
+//				tipUI.addTipInfo("<p align='center'>" + ArtifactManager.getGemTypeName(typeId) + "</p>", tipWidth, tipUI.maxRow + 1);
+//			}
+//			GameTipManager.showTip(tipUI);
+		}
+		
+		private function onCloseGemType(e:Event):void {
+//			GameTipManager.closeTip("gemType");
+		}
+		
+		//检查并得到装备信息
+		private function checkEquipInfo():void {
+			//如果已经重身上取下来就清空显示
+			if(_equipBag.haveIconItem){
+				var _tempIconBag:IconItemBag = PlayerUIManager.playerFullInfoUI.getEquipByCode(_equipBag.haveIconItem.itemCode);
+				if(!_tempIconBag){
+					clearContent();
+					return;
+				}
+			}
+			if(equipInfo){
+				return;
+			}
+			if (!_equipBag.haveIconItem) {
+				return;
+			}
+			equipInfo = GameItemInfoManager.getItemInfo(_equipBag.haveIconItem.itemId);
+			if (equipInfo) {
+				setGemBags(equipInfo);
+				setEquipInfoShow(equipInfo);
+				GameItemInfoManager.removeItemInfo(_equipBag.haveIconItem.itemId);
+			} else {
+			//如果没得到装备信息，发送取得信息命令
+				GameContext.bagItemManager.sendViewItem(_equipBag.haveIconItem.itemId);
+			}
+		}
+		
+		//放入装备
+		public function pushEquipIn(item:IconItem):void {
+			//得到装备配置
+			var itemConfig:Object = GameItemManager.getItemConfig(item.itemCode);
+			if (!itemConfig) { return; }
+			_equipBagCode = item.itemCode;
+			getPlayerGems();
+			//清空内容显示
+			clearContent();
+			clearMaterial();
+			equipInfo = null;
+
+			_equipBag.dropIconItem();
+			_equipBag.pushIconItem(item);
+			
+		}
+		
+		//镶嵌宝石到装备
+		public function embedGem(gemCode:String, gemIndexInBag:int):void {
+			if (!equipInfo || !_equipBag.haveIconItem) { 
+				PlayerUIManager.showTipInfo("正在获取装备信息！");
+				return;
+			}
+			var gemConfig:Object = GameItemManager.getItemConfig(gemCode);
+			if (!gemConfig) { return; }
+			//判断物品通用条件
+			if (!GameItemManager.checkItemPublicCondition(gemCode, true)) { return; }
+			//判断宝石类型
+			if (!ArtifactManager.checkEquipGemType(_equipBag.haveIconItem.itemCode, gemCode)) {
+				PlayerUIManager.showTipInfo(DiversityManager.getString("EmbedUI", "error_GemType"));
+				return;
+			}
+			//判断宝石等级
+			if (!ArtifactManager.checkEquipGemLevel(_equipBag.haveIconItem.itemCode, gemCode)) {
+				PlayerUIManager.showTipInfo(DiversityManager.getString("EmbedUI", "error_GemLevel"));
+				return;
+			}
+			var holeIndex:int = equipInfo.equipmentInfo.embedGemCodeList.length;
+			var confirmPrompt:String = "";
+			//
+			var equipConfig:Object = GameItemManager.getItemConfig(equipInfo.itemCode);
+//			var embedPlan:Object = ArtifactManager.getEmbedPlan(JSONUtil.getStr(equipConfig, ["properties", "embedPlanId"]));
+			//判断已经镶嵌的宝石
+			for (var i:int=0; i<equipInfo.equipmentInfo.embedGemCodeList.length; i++) {
+				var embedGemConfig:Object = GameItemManager.getItemConfig(equipInfo.equipmentInfo.embedGemCodeList[i]);
+				if (!embedGemConfig) { continue; }
+				//是否是宝玉
+				if(JSONUtil.getInt(embedGemConfig, ["subtype"])== GameItemSubtype.COLLECTION_BOWLDER){
+					continue;
+				}
+				//是否是同类型宝石
+				if (JSONUtil.getInt(embedGemConfig, ["properties", "gemType"]) == JSONUtil.getInt(gemConfig, ["properties", "gemType"])) {
+					//放入的宝石是否比原有的低
+//					if (JSONUtil.getInt(embedGemConfig, ["properties", "gemLevel"]) > JSONUtil.getInt(gemConfig, ["properties", "gemLevel"])) {
+//						PlayerUIManager.showTipInfo(DiversityManager.getString("EmbedUI", "error_CantCover"));
+//						return;
+//					} else if(JSONUtil.getInt(embedGemConfig, ["properties", "gemLevel"]) == JSONUtil.getInt(gemConfig, ["properties", "gemLevel"])){
+//						PlayerUIManager.showTipInfo(DiversityManager.getString("EmbedUI", "error_CantCoverSame"));
+//						return;
+//					} else {
+//						confirmPrompt = DiversityManager.getString("EmbedUI", "prompt_GemCover")
+//						holeIndex = i;
+//						break;
+//					}
+					PlayerUIManager.showTipInfo(DiversityManager.getString("EmbedUI", "error_CantCoverSame"));
+					return;
+				}
+			}
+			//判断是否有孔数
+			if (holeIndex > equipInfo.equipmentInfo.holeNumber - 1) {
+				PlayerUIManager.showTipInfo(DiversityManager.getString("EmbedUI", "error_NoMoreHole"));
+				return;
+			}
+			
+			//发送命令
+//			pointChooseStone.visible = false;
+			ArtifactManager.sendEmbed(_equipBag.haveIconItem.itemId, gemIndexInBag, holeIndex);
+			//玩家确认
+//			WindowManager.showConfirmBox(confirmPrompt + "\n" + DiversityManager.getString("EmbedBoxUI", "confirm_Embed", [GameLinkManager.getItemLinkA(gemCode, "")]), confirmEmbed, {gemIndex:holeIndex, itemIndex:gemIndexInBag});
+		}
+		
+		//选择要开的孔
+		private function selectHole():void {
+//			if (!equipInfo || !_equipBag.haveIconItem) { return; }
+//			var itemConfig:Object = GameItemManager.getItemConfig(_equipBag.haveIconItem.itemCode);
+//			//镶嵌方案
+//			var holePlan:Object = ArtifactManager.getHolePlan(JSONUtil.getStr(itemConfig, ["properties", "holePlanId"]));
+//			if (!holePlan) { return; }
+//			//
+//			var equipHoleCost:Object = ArtifactManager.getHoleCost(holePlan.planId, equipInfo.equipmentInfo.holeNumber);
+//			if (!GameItemManager.itemCanHole(_equipBag.haveIconItem.itemCode) || !equipHoleCost) {
+//				PlayerUIManager.showTipInfo(DiversityManager.getString("HoleUI", "error_EquipCantHole"));
+//				return;
+//			}
+//			//显示材料
+//			txtChance.text = DiversityManager.getString("EmbedBoxUI", "txtChance") + Number(equipHoleCost.chance * 100).toFixed(2) + "%";
+//			for (var aidCode:String in equipHoleCost.costItems) {
+//				var aidItem:IconItem = IconItemManager.getIconItemByCode(aidCode, "");
+//				if (aidItem) {
+//					aidItem.itemCount = equipHoleCost.costItems[aidCode];
+//					_materialBag.pushIconItem(aidItem);
+//					//判断背包中是否有足够的材料，如果没有则显示为红色
+//					if (PlayerUIManager.playerBagUI.getItemCount(aidCode) < equipHoleCost.costItems[aidCode]) {
+//						aidItem.countTextColor = 0xFF0000;
+//					} else {
+//						aidItem.countTextColor = 0xFFFFFF;
+//					}
+//				}
+//				break;
+//			}
+//			action = HOLE;
+//			cmdAction.label = DiversityManager.getString("EmbedBoxUI", "cmdHole");
+//			cmdAction.visible = true;
+		}
+		
+		//选择要拆除的宝石
+		private var selectedGemIndex:int;
+		private var selectedGemCode:String;
+		private function selectDisembed(gemCode:String, gemIndex:int):void {
+			if (!equipInfo || !_equipBag.haveIconItem) { return; }
+			selectedGemIndex = gemIndex;
+			selectedGemCode = gemCode;
+			action = DISEMBED;
+			doAction(null);
+		}
+		
+		//玩家做操作，拆除或是开孔
+		private function doAction(e:Event):void {
+			if (!equipInfo || !_equipBag.haveIconItem) { return; }
+			//判断装备
+			var itemConfig:Object = GameItemManager.getItemConfig(_equipBag.haveIconItem.itemCode);
+			if (!itemConfig) { return; }
+			//判断背包中是否有这件装备
+//			if (!PlayerUIManager.playerBagUI.getIconItemBagByID(_equipBag.haveIconItem.itemId)) {
+//				PlayerUIManager.showTipInfo(DiversityManager.getString("ItemPrompt", "notHaveItemInBag"));
+//				return;
+//			}
+			if (action == HOLE) {
+				//镶嵌方案
+//				var holePlan:Object = ArtifactManager.getHolePlan(JSONUtil.getStr(itemConfig, ["properties", "holePlanId"]));
+//				if (!holePlan) { return; }
+//				//
+//				var equipHoleCost:Object = ArtifactManager.getHoleCost(holePlan.planId, equipInfo.equipmentInfo.holeNumber);
+//				if (!GameItemManager.itemCanHole(_equipBag.haveIconItem.itemCode) || !equipHoleCost) {
+//					PlayerUIManager.showTipInfo(DiversityManager.getString("HoleUI", "error_EquipCantHole"));
+//					return;
+//				}
+//				//判断打孔消耗
+//				for (var aidCode:String in equipHoleCost.costItems) {
+//					if (!PlayerUIManager.playerBagUI || PlayerUIManager.playerBagUI.getEqualItemCount(aidCode) < equipHoleCost.costItems[aidCode]) {
+//						PlayerUIManager.showTipInfo(DiversityManager.getString("HoleUI", "error_NoMoreAid"));
+//						return;
+//					}
+//				}
+//				//发送命令
+//				ArtifactManager.sendHole(_equipBag.haveIconItem.itemId, equipInfo.equipmentInfo.holeNumber);
+			} else if (action == DISEMBED) {
+				//判断背包是否有空位
+				if (!PlayerUIManager.playerBagUI.haveEmptyBag(1)) {
+					PlayerUIManager.showTipInfo(DiversityManager.getString("CommonPrompt", "nomoreEmptyBag"));
+					return;
+				}
+				//检查拆除需求
+				var gemConfig:Object = GameItemManager.getItemConfig(selectedGemCode);
+				if (!gemConfig) { return; }
+				if(gemConfig.subtype == GameItemSubtype.COLLECTION_BOWLDER){
+					costObject= ArtifactManager.getDisembedBowlder(JSONUtil.getInt(gemConfig, ["properties", "gemLevel"]));
+				}else{
+					costObject= ArtifactManager.getDisembedCost(JSONUtil.getInt(gemConfig, ["properties", "gemLevel"]));
+				}
+				if (!costObject || GameContext.localPlayer.fullInfo.gold < JSONUtil.getInt(costObject, ["costGold"])) {
+					PlayerUIManager.showTipInfo(DiversityManager.getString("EmbedBoxUI", "error_Disembed"));
+					MsgPromptManager.addMsgPromptKind(MsgPromptEnum.RB_GOLD_LESS);
+					PlayerUIManager.littleHelperUI.openUIByTab(PlayerUIManager.littleHelperUI.GOLD);
+					return;
+				}
+
+				WindowManager.showConfirmBox("\n" + DiversityManager.getString("EmbedBoxUI", "do_Disembed", [GoldManager.getGoldString(JSONUtil.getInt(costObject, ["costGold"])), GameLinkManager.getItemLinkA(selectedGemCode, "")]), doDisembed, {gemIndex:selectedGemIndex});
+			}
+		}
+		
+		//确认拆除
+		private function doDisembed(confirm:Object):void{
+			if(!confirm.confirm) {return;}
+			//发送拆除命令
+			ArtifactManager.sendDisembed(_equipBag.haveIconItem.itemId, confirm.par.gemIndex);
+		}
+		
+		//确认镶嵌
+		private function confirmEmbed(confirm:Object):void {
+			if (!confirm.confirm) { return; }
+			//发送命令
+//			pointChooseStone.visible = false;
+			ArtifactManager.sendEmbed(_equipBag.haveIconItem.itemId, confirm.par.itemIndex, confirm.par.gemIndex);
+		}
+
+		//设置装备孔显示
+		private function setGemBags(info:GameItemFullInfo):void {
+			if (!info || !info.equipmentInfo || !equipInfo) {
+				return;
+			}
+				
+			for (var i:int=0; i<_gemBags.length; i++) {
+				var thisBag:IconItemBag = _gemBags[i];
+				//清空显示
+				thisBag.dropIconItem();
+				thisBag.clearTips();
+				//是否已经开启孔
+				thisBag.isLocked = (i >= info.equipmentInfo.holeNumber);
+				//是否有已经镶嵌的宝石
+				if (i < info.equipmentInfo.embedGemCodeList.length) {
+					var gem:IconItem = IconItemManager.getIconItemByCode(info.equipmentInfo.embedGemCodeList[i], "");
+					if (gem) {
+						thisBag.pushIconItem(gem);
+					}
+				}
+			}
+		}
+		
+		/**
+		 * 设置装备属性显示
+		 */
+		private function setEquipInfoShow(info:GameItemFullInfo):void {
+			if (!info || !info.equipmentInfo || !equipInfo) {
+				return;
+			}
+			//属性
+//			var itemConfig:Object = GameItemManager.getItemConfig(info.itemCode);
+//			getNowEquipAttr(info, itemConfig, info.equipmentInfo.enhanceLevel, [nowAttr_1, nowAttr_2]);
+//			txtHoleValue.htmlText = "<font color='#00ff00'>"+info.equipmentInfo.embedGemCodeList.length+"</font>"+"<font color='#fdf2ad'>"+" / "+ info.equipmentInfo.holeNumber+"</font>";
+			
+			//镶嵌属性
+//			for (var _index:int=0; _index < _infoArr.length; _index++){
+//				var _txtF:TextField = _infoArr[_index];
+//				if(_index < info.equipmentInfo.embedGemCodeList.length){
+//					//有镶嵌宝石
+//					var gemCode:String = info.equipmentInfo.embedGemCodeList[_index];
+//					var gemConfig:Object = GameItemManager.getItemConfig(gemCode);
+//					if (!gemConfig) { continue; }
+//					var gemColor:String = GameItemRank.getRankColor(gemConfig.rank).toString(16);
+//					var gemAttr:Object = JSONUtil.getObject(gemConfig, ["properties", "gemAttr"]);
+//					for (var gemEnum:String in gemAttr) {
+//					//一种宝石只能增加一种属性
+//						TextEffect.startChangeEffect( _txtF, "", "<font color='#fdf2ad'>"+gemConfig.name+"</font> <font color='#00ff00'>"+RoleAttributesModifierEnum.getAttributesValueString(int(gemEnum), gemAttr[gemEnum])+"("+RoleAttributesModifierEnum.getAttributesName(int(gemEnum))+")"+"</font>" );
+////						_txtF.htmlText = "<font color='#fdf2ad'>"+gemConfig.name+"</font> <font color='#00ff00'>"+RoleAttributesModifierEnum.getAttributesValueString(int(gemEnum), gemAttr[gemEnum])+"("+RoleAttributesModifierEnum.getAttributesName(int(gemEnum))+")"+"</font>";
+//					}
+//					setChildGotoAndStop(_pointHole_RArr[_index], 3);
+//				}else if (_index < info.equipmentInfo.holeNumber){
+//					//未镶嵌
+//					_txtF.htmlText = "<font color='#ad965f'>" + DiversityManager.getString("EmbedBoxUI", "noStone") + "</font>";
+//					setChildGotoAndStop(_pointHole_RArr[_index], 2);
+//				}else {
+//					//无孔
+//					_txtF.htmlText = "<font color='#ad965f'>" + DiversityManager.getString("EmbedBoxUI", "noHole") + "</font>";
+//					setChildGotoAndStop(_pointHole_RArr[_index], 1);
+//				}
+//			}
+			
+			//装备评分
+			var itemConfig:Object = GameItemManager.getItemConfig(info.itemCode);
+//			equipScore.text = info.equipmentInfo.equipScore + "";
+//			var _configT:Object = EquipmentManager.getNextScoreConfigByScore(itemConfig.subtype, info.equipmentInfo.equipScore);
+//			if(_configT){
+//			var equipRankColor:String=(GameItemRank.getScoreColor(_configT["scoreIndex"])).toString(16);
+//				txtNextScore.htmlText =  "<font color='#CCFFFF'>" + info.equipmentInfo.equipScore + "</font><font color='#" + equipRankColor + "'>/" + _configT["score"] + "  【" + _configT["name"] + "】</font>";
+//			}else{
+//				txtNextScore.htmlText =  DiversityManager.getString("EnhanceUI", "maxRank");
+//			}
+		}
+		
+		/**
+		 * 获取装备对应强化等级(enchaneLevel级)的基础属性
+		 */
+		private function getNowEquipAttr(itemInfo:GameItemFullInfo, itemConfig:Object, enchaneLevel:int, attrArr:Array, showName:Boolean = true):void{
+			if(!itemInfo || !itemConfig || !attrArr){
+				return;
+			}
+			var baseAttr:Array=JSONUtil.getObject(itemConfig, ["properties", "baseAttr"]) as Array;
+			if(!baseAttr){
+				return;
+			}
+			var enhanceAttr:Object=EquipEnhanceManager.getEnhanceAttr(itemConfig.properties.enhanceId);
+			//如果是随机的，则从信息中得到品质，如果不是则从配置中得到品质
+			var itemQuality:int = 0;
+			if(itemInfo.equipmentInfo){
+				if (itemInfo.equipmentInfo.isRandomQuality) {
+					itemQuality = itemInfo.equipmentInfo.quality
+				} else {
+					itemQuality = JSONUtil.getInt(itemConfig, ["properties", "quality"]);
+				}
+			}
+			
+			var totalObject:Object=new Object(); //综合强化的属性和基础属性
+			//基础属性
+			for each (var obj:Object in baseAttr){
+				var _ss:String=obj.attr.toString();
+				//品质修正值
+//				var attrValue:Number = GameItemManager.getItemQualityValue(obj.value, itemQuality);
+				var attrValue:Number = obj.value;
+				//强化值增加
+				var _value:int = 0;
+				if(enhanceAttr && enhanceAttr[_ss]){
+					_value = Math.round(attrValue + enchaneLevel * enhanceAttr[_ss]);
+				}else{
+					_value = Math.round(attrValue);
+				}
+				if (totalObject[_ss]){
+					totalObject[_ss]+=_value;
+				}
+				else{
+					totalObject[_ss]=_value;
+				}
+			}
+			
+//			for each (var _txt:TextField in attrArr){
+//				_txt.text = "";
+//			}
+			var index:int = 0;
+			for (var str:String in totalObject){
+				if(index > 1){
+					return;
+				}
+				if(showName){
+					TextEffect.startChangeEffect( attrArr[index], RoleAttributesModifierEnum.getAttributesName(int(str)) + "       " + totalObject[str] );
+//					attrArr[index].text = RoleAttributesModifierEnum.getAttributesName(int(str)) + "       " + totalObject[str];
+				}else{
+					TextEffect.startChangeEffect( attrArr[index].text, totalObject[str] );
+//					attrArr[index].text = totalObject[str];
+				}
+				index++;
+			}
+		}
+		
+		//清空内容显示，包括孔和宝石显示、当前选择要拆除的宝石和材料显示等（已放入的装备除外）
+		public function clearContent(clearEquipInfo:Boolean = false):void {
+			for each(var thisBag:IconItemBag in _gemBags) {
+				thisBag.visible = true;
+				thisBag.dropIconItem();
+				thisBag.clearTips();
+				thisBag.isLocked = true;
+			}
+			if (clearEquipInfo) { 
+//				equipScore.text = "";
+				_equipBag.dropIconItem();
+				equipInfo = null;
+			}
+			action = "";
+		}
+		
+		//清空操作和材料显示
+		public function clearMaterial():void {
+//			action = "";
+//			cmdAction.visible = false;
+//			txtChance.text = "";
+		}
+		
+		/**
+		 * 全身装备镶满几阶以上的宝石，共镶嵌54颗宝石
+		 * @param isAllGem 是否要全身镶满54颗宝石
+		 */
+		public function getAllEquipEmbedGemMax(lv:int, isAllGem:Boolean):Boolean {
+			var bagNames:Array=[EquipmentKind.WEAPON, EquipmentKind.HAT, EquipmentKind.CLOTHES, EquipmentKind.MEDAL, EquipmentKind.GLOVE,
+				EquipmentKind.SHOES, EquipmentKind.AMULET, EquipmentKind.ACCESSORY, EquipmentKind.RING];
+			var _gemNum:int = 0;
+			for each(var type:int in bagNames) {
+				var _equBag:IconItemBag = JSONUtil.getObject(PlayerUIManager.smithUI.roleBagKind, [type]) as IconItemBag;
+				if(_equBag){
+					if(_equBag.haveIconItem){
+						var _itemInfo:GameItemFullInfo = EquipmentManager.getEquippedItemInfoByKind(type);
+						if(!_itemInfo || !_itemInfo.equipmentInfo || !_itemInfo.equipmentInfo.embedGemCodeList){
+							return false;
+						}
+						for (var i:int=0; i < _itemInfo.equipmentInfo.embedGemCodeList.length; i++){
+							var embedGemConfig:Object = GameItemManager.getItemConfig(_itemInfo.equipmentInfo.embedGemCodeList[i]);
+							if (!embedGemConfig) {
+								return false;
+							}
+							if (JSONUtil.getInt(embedGemConfig, ["properties", "gemLevel"]) < lv) {
+								return false;
+							}
+							_gemNum++;
+						}
+					}else{
+						return false;
+					}
+				}else{
+					return false;
+				}
+			}
+			if(isAllGem){
+				if(_gemNum == 54){
+					return true;
+				}else{
+					return false;
+				}
+			}else{
+				return true;
+			}
+		}
+		
+		/**
+		 * 全身装备镶满某种类型的宝石，共镶嵌9颗
+		 */
+		public function getAllEquipEmbedGem(gemType:int):Boolean {
+			var bagNames:Array=[EquipmentKind.WEAPON, EquipmentKind.HAT, EquipmentKind.CLOTHES, EquipmentKind.MEDAL, EquipmentKind.GLOVE,
+				EquipmentKind.SHOES, EquipmentKind.AMULET, EquipmentKind.ACCESSORY, EquipmentKind.RING];
+			var _gemNum:int = 0;
+			for each(var type:int in bagNames) {
+				var _equBag:IconItemBag = JSONUtil.getObject(PlayerUIManager.smithUI.roleBagKind, [type]) as IconItemBag;
+				if(_equBag){
+					if(_equBag.haveIconItem){
+						var _itemInfo:GameItemFullInfo = EquipmentManager.getEquippedItemInfoByKind(type);
+						if(!_itemInfo || !_itemInfo.equipmentInfo || !_itemInfo.equipmentInfo.embedGemCodeList){
+							return false;
+						}
+						var _haveGem:Boolean = false;
+						for (var i:int=0; i < _itemInfo.equipmentInfo.embedGemCodeList.length; i++){
+							var embedGemConfig:Object = GameItemManager.getItemConfig(_itemInfo.equipmentInfo.embedGemCodeList[i]);
+							if (!embedGemConfig) {
+								return false;
+							}
+							if (JSONUtil.getInt(embedGemConfig, ["properties", "gemType"]) == gemType &&
+								JSONUtil.getInt(embedGemConfig, ["properties", "gemLevel"]) >= 7) {
+								_haveGem = true;
+								_gemNum++;
+								break;
+							}
+						}
+						if(!_haveGem){
+							return false;
+						}
+					}else{
+						return false;
+					}
+				}else{
+					return false;
+				}
+			}
+			if(_gemNum == 9){
+				return true;
+			}else{
+				return false;
+			}
+		}
+		
+		public function getIconItemBags():Array {
+			return [].concat(_gemBags, _stoneBags, _equipBag);
+		}
+		
+		public function playCartoon():void {
+//			equipInfo = null;
+//			pointCartoon.visible = true;
+//			if(pointCartoon.numChildren > 0){
+//				var _mc:ResourceDisplay = pointCartoon.getChildAt(0) as ResourceDisplay;
+//				if(_mc ){
+//					_mc.gotoAndStop(1,0,playEnd);
+//				}
+//			}
+		}
+		
+		private function playEnd():void {
+//			pointCartoon.visible = false;
+		}
+		
+		/**
+		 * 设置子目标到第几帧
+		 */
+		private function setChildGotoAndStop(target:MovieClip, index:int):void {
+			if(target && target.numChildren && (target.getChildAt(0) as MovieClip)){
+				(target.getChildAt(0) as MovieClip).gotoAndStop(index);
+			}
+		}
+		
+		//自动选择一个装备
+		private function autoChooseEquip():void {
+			if(_isSelDef || getEquipBag.haveIconItem) return;
+			
+			var bagNames:Array=[EquipmentKind.HAT, EquipmentKind.CLOTHES, EquipmentKind.MEDAL, EquipmentKind.GLOVE,
+				EquipmentKind.SHOES, EquipmentKind.AMULET, EquipmentKind.ACCESSORY, EquipmentKind.RING];
+			
+			var autoBag:IconItemBag = null;
+			
+			var equBag:IconItemBag = JSONUtil.getObject(PlayerUIManager.smithUI.roleBagKind, [EquipmentKind.WEAPON]) as IconItemBag;
+			if(equBag && equBag.haveIconItem)
+			{//武器
+				autoBag = equBag;
+				equipInfo = null;
+//				PlayerUIManager.smithUI.smithEquip.pointChooseEffect.visible = true;
+//				PlayerUIManager.smithUI.smithEquip.pointChooseEffect.x = equBag.x;
+//				PlayerUIManager.smithUI.smithEquip.pointChooseEffect.y = equBag.y;
+//				pushEquipIn(equBag.haveIconItem.clone());
+			}else{
+				for each(var type:int in bagNames) {
+					var equBag2:IconItemBag = JSONUtil.getObject(PlayerUIManager.smithUI.roleBagKind, [type]) as IconItemBag;
+					if(equBag2 && equBag2.haveIconItem)
+					{
+						autoBag = equBag2;
+						equipInfo = null;
+//						PlayerUIManager.smithUI.smithEquip.pointChooseEffect.visible = true;
+//						PlayerUIManager.smithUI.smithEquip.pointChooseEffect.x = equBag2.x;
+//						PlayerUIManager.smithUI.smithEquip.pointChooseEffect.y = equBag2.y;
+//						pushEquipIn(equBag2.haveIconItem.clone());
+						break;
+					}
+				}
+			}
+			
+			if(autoBag && autoBag.haveIconItem){
+				PlayerUIManager.smithUI.clickIconItemBag(autoBag,false,false);
+			}
+			_isSelDef = true;
+		}
+		
+		public function get getEquipBag():IconItemBag{
+			return _equipBag;
+		}
+		
+		//是否加载完毕
+		private var resLoaded:Boolean;
+		public function showUI():void {
+			if(!GameContext.localPlayer.fullInfo.isGM && !PlayerUIManager.controlBarUI.controlRight.rightButton.cmdSmith.visible){
+				PlayerUIManager.showTipInfo(DiversityManager.getString("ControlBarUI", "LevelUp"));
+				return;
+			}
+			
+			if (!resLoaded)
+			{
+				loadAndShowRes();
+				return;
+			}
+			
+			this.visible = true;
+			
+			setTimeout(extendSelectAuto,100);
+		}
+		
+		private function extendSelectAuto():void{
+//			pointChooseStone.visible = false;
+			clearContent();
+			clearGoods();
+			_equipBag.dropIconItem();
+			getPlayerGems();
+			autoChooseEquip();
+			GameContext.addEventListener(Event.ENTER_FRAME, onEnterFrame);
+			if(PlayerUIManager.playerFullInfoUI) PlayerUIManager.playerFullInfoUI.refreshGemInfo();
+		}
+		
+		public function loadAndShowRes():void
+		{
+			if(resLoaded){
+				return;
+			}
+			if(this.parent){
+				this.visible = true;
+			}
+			resLoaded=true;
+			point_Explain.addChild(new ResourceDisplay("ui/smith/Explain.png"));
+//			pointUI_BG.addChild(new ResourceDisplay("ui/smith/embedBG.png"));
+//			
+//			pointChooseStone.addChild(new ResourceDisplay("chooseEffect@ui/smith.lib"));
+//			pointCartoon.addChild(new ResourceDisplay("cartoon@ui/smith.lib"));
+			pointGemEffect.addChild(new ResourceDisplay("GemSuitEffect@ui/smith.lib"));
+			if(pointGemEffect.numChildren){
+				(pointGemEffect.getChildAt(0) as ResourceDisplay).gotoAndStop(1);
+				(pointGemEffect.getChildAt(0) as ResourceDisplay).filters = [UIUtil.getGrayFilterNoAlpha()];
+			} 
+//			pointGemIndex.mouseChildren=false;
+//			pointGemIndex.mouseEnabled=false;
+//			pointCartoon.visible = false;
+//			pointChooseStone.visible = false;
+//			pointChooseStone.mouseChildren = false;
+//			pointChooseStone.mouseEnabled = false;
+			if(this.parent){
+				PlayerUIManager.showChildUI(PlayerUIManager.smithUI, this);
+			}else{
+				return;
+			}
+		}
+		
+		public function closeUI():void {
+			_isSelDef = false;
+			clearContent();
+			clearGoods();
+			_equipBag.dropIconItem();
+			GameContext.removeEventListener(Event.ENTER_FRAME, onEnterFrame);
+			this.visible = false;
+		}
+		
+		public function getUIBonus(targetCoordinateSpace:DisplayObject):Rectangle {			return null;		}		public function resetUI():void {
+		}
+
+		public function get mouseOn():Boolean {
+			if (this.visible) {
+				return this.getBounds(this).contains(this.mouseX, this.mouseY);
+			} else {
+				return false;
+			}
+		}
+		
+		public function destroy():void {
+			removeListener();
+			try{
+				GameContext.removeEventListener(Event.ENTER_FRAME, onEnterFrame);
+			}catch(e:Error){}
+//			while(pointUI_BG.numChildren){
+//				pointUI_BG.removeChildAt(0);
+//			}
+		}
+		
+		public function clickIconItemBag(itemBag:IconItemBag, shiftKey:Boolean, ctrlKey:Boolean):void {
+			if(_gemBags.indexOf(itemBag) > -1){
+				//点击宝石孔
+				if (itemBag.isLocked) {
+//					selectHole();
+				} else if (itemBag.haveIconItem && itemBag.haveIconItem.itemType == GameItemType.COLLECTION) {
+					//点击选择要拆除的宝石
+					selectDisembed(itemBag.haveIconItem.itemCode, itemBag.itemIndex);
+				}
+			}else if(_stoneBags.indexOf(itemBag) > -1){
+				//选择宝石
+				if(itemBag.haveIconItem){
+//					pointChooseStone.visible = true;
+//					pointChooseStone.x = itemBag.x;
+//					pointChooseStone.y = itemBag.y;
+				}
+				MenuManager.showEmbedMenu(itemBag);
+			}
+		}
+		
+		public function dbclickIconItemBag(itemBag:IconItemBag):void{
+			PlayerMenuUI.closeMenuById("embedMenu");
+			if (!_equipBag.haveIconItem || !itemBag.haveIconItem) {
+				return;
+			}
+			if(_stoneBags.indexOf(itemBag) > -1){
+			//双击宝石镶嵌
+				embedGem(itemBag.haveIconItem.itemCode, itemBag.itemIndex);
+			}
+		}
+		
+		public function onDragInIconItem(itemBag:IconItemBag, iconItem:IconItem, fromBag:IconItemBag):void {
+		}
+		
+		public function onDragOutIconItem(itemBag:IconItemBag, targetItemBag:IconItemBag, targetIconUI:IIconItemUI):void{
+		}
+	}
+}

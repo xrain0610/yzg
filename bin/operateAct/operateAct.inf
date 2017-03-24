@@ -1,0 +1,15 @@
+[
+	{
+		"actCode":"pf",
+		"actPassId":"8",
+		"actCond":"",
+		"actRes":"pingfen.swf",
+		"actResWidth":50,
+		"actTipsWidth":350,
+		"actTips":"",
+		"actStartTime":"",
+		"actEndTime":"",
+		"actMacro":"showui GradeUI",
+		"actJS":""
+	}
+]
